@@ -9,8 +9,6 @@ NULL_THRESHOLD = 0.90
 MAX_FFILL_GAP = 6
 DAYTIME_START = 6
 DAYTIME_END = 18
-PREDICTION_WINDOW_MIN = 7
-PREDICTION_WINDOW_MAX = 10
 
 def parse_column_schema(columns: list[str]) -> dict:
     pattern = re.compile(r"^(\w+)\[(\d+)\]\.(.+)$")
@@ -265,72 +263,6 @@ def impute_missing(df: pl.DataFrame) -> pl.DataFrame:
     return df
 
 
-def identify_failure_events(df: pl.DataFrame) -> pl.DataFrame:
-    if "hour" not in df.columns and "timestamp" in df.columns:
-        if df["timestamp"].dtype in (pl.Datetime,):
-            df = df.with_columns(pl.col("timestamp").dt.hour().alias("hour"))
-
-    daytime = (pl.col("hour") >= DAYTIME_START) & (pl.col("hour") <= DAYTIME_END)
-
-    if "inv_power" in df.columns:
-        df = df.with_columns(
-            ((pl.col("inv_power").abs() < 0.1) & daytime)
-            .cast(pl.Int8).alias("is_failure_event")
-        )
-    else:
-        df = df.with_columns(pl.lit(0).cast(pl.Int8).alias("is_failure_event"))
-
-    return df
-
-def create_forward_looking_target(df: pl.DataFrame) -> pl.DataFrame:
-    ts_col = "timestamp"
-    group_col = "inverter_idx"
-    has_group = group_col in df.columns
-
-    if ts_col not in df.columns or df[ts_col].dtype not in (pl.Datetime,):
-        if "is_failure_event" in df.columns:
-            df = df.with_columns(pl.col("is_failure_event").alias("target"))
-        elif "target" not in df.columns:
-            df = df.with_columns(pl.lit(0).cast(pl.Int8).alias("target"))
-        return df
-
-    sort_cols = ([group_col] if has_group else []) + [ts_col]
-    df = df.sort(sort_cols)
-
-    df = df.with_columns(
-        pl.when(pl.col("is_failure_event") == 1)
-        .then(pl.col(ts_col))
-        .otherwise(None)
-        .alias("_failure_ts")
-    )
-
-    if has_group:
-        df = df.with_columns(
-            pl.col("_failure_ts").backward_fill().over(group_col).alias("_next_failure_ts")
-        )
-    else:
-        df = df.with_columns(
-            pl.col("_failure_ts").backward_fill().alias("_next_failure_ts")
-        )
-
-    df = df.with_columns(
-        (pl.col("_next_failure_ts") - pl.col(ts_col))
-        .dt.total_seconds().truediv(86400)
-        .alias("days_to_next_failure")
-    )
-
-    df = df.with_columns(
-        pl.when(
-            (pl.col("days_to_next_failure") >= PREDICTION_WINDOW_MIN) &
-            (pl.col("days_to_next_failure") <= PREDICTION_WINDOW_MAX)
-        ).then(1).otherwise(0)
-        .cast(pl.Int8).alias("target")
-    )
-
-    df = df.drop(["_failure_ts", "_next_failure_ts"])
-    return df
-
-
 def add_temporal_features(df: pl.DataFrame) -> pl.DataFrame:
     if "timestamp" not in df.columns or df["timestamp"].dtype not in (pl.Datetime,):
         return df
@@ -485,36 +417,94 @@ def add_nighttime_anomaly_features(df: pl.DataFrame) -> pl.DataFrame:
                     pass
     return df
 
-def process_raw_csv_to_train_ready(upload_path: str, plant_id: str = "plant_custom") -> pl.DataFrame:
-    df = process_single_csv(upload_path)
-    df = resample_hourly(df)
-    df = impute_missing(df)
-    
-    df = identify_failure_events(df)
-    df = create_forward_looking_target(df)
-    
+def add_string_health_features(df: pl.DataFrame) -> pl.DataFrame:
+    has_group = "inverter_idx" in df.columns
+
+    smu_cols = sorted([c for c in df.columns if re.match(r"smu_string\d+$", c)])
+    if len(smu_cols) < 3:
+        return df
+
+    df = df.with_columns([
+        pl.mean_horizontal(smu_cols).alias("str_mean"),
+        pl.min_horizontal(smu_cols).alias("str_min"),
+        pl.max_horizontal(smu_cols).alias("str_max"),
+        (pl.max_horizontal(smu_cols) - pl.min_horizontal(smu_cols)).alias("str_spread"),
+        (pl.min_horizontal(smu_cols) / (pl.max_horizontal(smu_cols) + 1e-6)).alias("str_worst_ratio"),
+    ])
+
+    row_mean = pl.mean_horizontal(smu_cols)
+    underperf = [((pl.col(c) < row_mean * 0.5) & (pl.col(c).is_not_null())).cast(pl.Int8) for c in smu_cols]
+    df = df.with_columns(pl.sum_horizontal(underperf).alias("str_underperf_count"))
+
+    for label, w in {"3d": 72, "7d": 168}.items():
+        expr = pl.col("str_mean").rolling_mean(window_size=w, min_periods=1)
+        if has_group:
+            expr = expr.over("inverter_idx")
+        df = df.with_columns(expr.alias(f"str_mean_rmean_{label}"))
+
+    df = df.with_columns(
+        (pl.col("str_mean") / (pl.col("str_mean_rmean_7d") + 1e-6)).alias("str_trend_7d")
+    )
+
+    expr = pl.col("str_worst_ratio").rolling_mean(window_size=168, min_periods=1)
+    if has_group:
+        expr = expr.over("inverter_idx")
+    df = df.with_columns(expr.alias("str_worst_ratio_rmean_7d"))
+
+    return df
+
+
+def add_inter_inverter_features(df: pl.DataFrame) -> pl.DataFrame:
+    """Compare each inverter against its plant peers at the same timestamp (call per plant)."""
+    if "inverter_idx" not in df.columns or df["inverter_idx"].n_unique() < 2:
+        return df
+
+    new_cols = []
+    temp_cols = []
+
+    for signal, name in [("inv_power", "power"), ("inv_temp", "temp")]:
+        if signal not in df.columns:
+            continue
+
+        med = f"_plant_med_{name}"
+        std = f"_plant_std_{name}"
+        df = df.with_columns([
+            pl.col(signal).median().over("timestamp").alias(med),
+            pl.col(signal).std().over("timestamp").alias(std),
+        ])
+        temp_cols.extend([med, std])
+
+        new_cols.append((pl.col(signal) - pl.col(med)).alias(f"peer_{name}_dev"))
+        new_cols.append(
+            ((pl.col(signal) - pl.col(med)) / (pl.col(std) + 1e-6)).alias(f"peer_{name}_zscore")
+        )
+
+    if "inv_power" in df.columns:
+        df = df.with_columns(pl.col("inv_power").max().over("timestamp").alias("_pmax"))
+        temp_cols.append("_pmax")
+        new_cols.append((pl.col("inv_power") / (pl.col("_pmax") + 1e-6)).alias("peer_power_vs_best"))
+
+    if new_cols:
+        df = df.with_columns(new_cols)
+
+    temp_cols = [c for c in temp_cols if c in df.columns]
+    if temp_cols:
+        df = df.drop(temp_cols)
+
+    return df
+
+
+def add_all_features(df: pl.DataFrame) -> pl.DataFrame:
+    """Feature engineering shared by training, evaluation and raw-upload inference.
+
+    Expects hourly rows for one plant, with `inverter_idx` and `timestamp`.
+    """
+    df = df.sort(["inverter_idx", "timestamp"])
     df = add_temporal_features(df)
     df = add_rolling_telemetry_features(df)
     df = add_degradation_features(df)
     df = add_cumulative_stress_features(df)
-    
     df = add_nighttime_anomaly_features(df)
-    
-    df = df.with_columns(pl.lit(plant_id).alias("plant_id"))
-    
-    # Simple default logic for missing TOP_20 features so training doesn't break
-    TOP_20_FEATURES = [
-        "inv_kwh_total", "roll_temp_mean_7d", "roll_kwh_today_std_7d", 
-        "roll_temp_std_7d", "roll_temp_std_3d", "roll_temp_mean_3d", 
-        "roll_pv1_power_std_7d", "anom_night_power_7d", "roll_kwh_today_mean_7d", 
-        "roll_kwh_today_std_3d", "str_worst_ratio_rmean_7d", "day_of_week", 
-        "inv_power", "str_mean_rmean_7d", "roll_kwh_today_mean_3d", 
-        "stress_hightemp_7d", "is_daytime", "anom_night_hightemp_7d", 
-        "roll_power_std_3d", "roll_pv1_power_mean_3d"
-    ]
-    
-    for f in TOP_20_FEATURES:
-        if f not in df.columns:
-            df = df.with_columns(pl.lit(0.0).alias(f))
-            
+    df = add_string_health_features(df)
+    df = add_inter_inverter_features(df)
     return df

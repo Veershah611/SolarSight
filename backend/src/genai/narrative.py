@@ -1,88 +1,116 @@
-from src.genai.llm_client import is_llm_available, get_gemini_client
-from typing import List, Any
-import logging
+"""Maintenance report for one inverter: Gemini when configured, otherwise rule-based.
+
+Both paths return the same JSON shape, so the dashboard renders either:
+    {status, headline, summary, estimatedLossPct,
+     likelyCauses: [{rank, name, category, confidence, evidence, action}], checks: [str]}
+"""
 import json
+import logging
 
-def _generate_fallback_json(inverter_id, risk_level, risk_score, features, summary_text):
-    top_causes = []
-    for i, f in enumerate(features[:3]):
-        feat_name = getattr(f, 'feature', str(f))
-        shap_val = getattr(f, 'shap_value', 0.0)
-        top_causes.append({
-            "rank": i + 1,
-            "name": feat_name,
-            "importance": int(min(abs(shap_val) * 100, 100)),
-            "category": "electrical",
-            "description": f"Anomaly detected in {feat_name} feature.",
-            "dataEvidence": f"SHAP impact factor: {shap_val}",
-            "action": "Verify field telemetry parameters."
-        })
-        
-    health_score = int((1.0 - risk_score) * 100) if risk_score <= 1.0 else int(100 - risk_score)
-    health_score = max(0, min(100, health_score))
+from src.api.schemas import InverterContext
+from src.genai.llm_client import generate_json, is_llm_available
 
-    obj = {
-        "riskLevel": risk_level,
-        "summary": summary_text,
-        "topCauses": top_causes,
-        "criticalEvents": [],
-        "healthScore": health_score
+CATEGORIES = ["electrical", "string", "thermal", "soiling_shading", "communication", "other"]
+
+
+def _evidence_map(inv: InverterContext) -> dict:
+    return {e.signal: e for e in inv.evidence}
+
+
+def _value(ev: dict, signal: str):
+    return ev[signal].value if signal in ev else None
+
+
+def rule_based_report(inv: InverterContext) -> dict:
+    """Deterministic diagnosis from the detector's evidence signals."""
+    ev = _evidence_map(inv)
+    ratio = _value(ev, "energy_vs_expected")
+    zero_hours = _value(ev, "zero_output_hours") or 0
+    causes = []
+
+    def add(name, category, confidence, evidence, action):
+        causes.append({"rank": len(causes) + 1, "name": name, "category": category,
+                       "confidence": confidence, "evidence": evidence, "action": action})
+
+    if zero_hours >= 3 or (ratio is not None and ratio < 0.2):
+        add("Inverter trip or AC-side outage", "electrical", 80,
+            f"{int(zero_hours)} daylight hours with no output while peers were producing",
+            "Read the inverter fault log, check the AC breaker and grid connection, then restart the inverter.")
+    if "string_balance" in ev:
+        now, typical = ev["string_balance"].value, ev["string_balance"].typical
+        if now is not None and typical is not None and now < typical - 0.15:
+            add("String or combiner-box fault", "string", 70,
+                f"Weakest/strongest string current fell to {now:.2f} (typically {typical:.2f})",
+                "Measure string currents and check fuses and connectors in the combiner box.")
+    if "temp_vs_peers_c" in ev:
+        now, typical = ev["temp_vs_peers_c"].value, ev["temp_vs_peers_c"].typical
+        if now is not None and typical is not None and now > typical + 5 and (ratio is None or ratio < 0.95):
+            add("Thermal derating", "thermal", 60,
+                f"Running {now - typical:.1f} °C hotter relative to peers than usual",
+                "Inspect cooling fans, air filters and enclosure ventilation.")
+    if inv.status != "OK" and ratio is not None and 0.2 <= ratio < 0.95 and not causes:
+        add("Partial output loss (soiling, shading or a failed MPPT input)", "soiling_shading", 45,
+            f"Produced {ratio:.0%} of expected output without dropping to zero",
+            "Inspect the array for soiling or new shading and compare the inverter's MPPT input currents.")
+    if inv.status != "OK" and not causes:
+        add("Intermittent underperformance", "other", 30,
+            f"{inv.alarm_hours} alarm hours in the uploaded window",
+            "Review the inverter's event log around the first alarm and keep it under observation.")
+
+    loss = round(max(0.0, 1 - ratio) * 100, 1) if ratio is not None else inv.risk_score
+    if inv.status == "OK":
+        headline = "Performing in line with peers"
+        summary = (f"{inv.inverter_id} produced {ratio:.0%} of its expected output on the latest day, "
+                   "within normal variation of its peers." if ratio is not None else
+                   f"{inv.inverter_id} shows no sustained shortfall against its peers.")
+    else:
+        top = causes[0]["name"]
+        summary = (f"{inv.inverter_id} produced {ratio:.0%} of its expected output on the latest day "
+                   f"({inv.alarm_hours} alarm hours in the window). Most likely cause: {top}."
+                   if ratio is not None else f"{inv.inverter_id} has {inv.alarm_hours} alarm hours. Most likely cause: {top}.")
+        headline = causes[0]["name"]
+
+    checks = [c["action"] for c in causes] or ["No action needed; keep monitoring."]
+    return {"status": inv.status, "headline": headline, "summary": summary,
+            "estimatedLossPct": loss, "likelyCauses": causes, "checks": checks}
+
+
+def _prompt(inv: InverterContext, parameters: str | None) -> str:
+    facts = {
+        "inverter_id": inv.inverter_id,
+        "status": inv.status,
+        "energy_shortfall_latest_day_pct": inv.risk_score,
+        "energy_ratio_latest_day": inv.energy_ratio_latest_day,
+        "energy_ratio_whole_upload": inv.energy_ratio_window,
+        "alarm_hours": inv.alarm_hours,
+        "first_alarm": inv.first_alarm,
+        "evidence": [e.model_dump() for e in inv.evidence],
     }
-    return json.dumps(obj)
+    return (
+        "You are a solar O&M engineer. A detector compares each inverter's output with what its plant peers "
+        "imply it should produce (energy_ratio 1.0 = as expected) and raises a CUSUM alarm on sustained "
+        "shortfall. Diagnose this inverter using ONLY the facts below; do not invent measurements.\n\n"
+        f"Facts:\n{json.dumps(facts, indent=2)}\n\n"
+        f"Operator notes: {parameters or 'none'}\n\n"
+        "Return a JSON object with exactly these keys:\n"
+        '{"status": "ALARM|WATCH|OK", "headline": "<= 8 words", '
+        '"summary": "2-3 sentences citing the numbers", "estimatedLossPct": number, '
+        '"likelyCauses": [{"rank": 1, "name": str, "category": one of '
+        f"{CATEGORIES}, "
+        '"confidence": 0-100, "evidence": "which fact supports it", "action": "what the technician should do"}], '
+        '"checks": ["ordered on-site checks"]}\n'
+        "List at most 3 causes. If status is OK, return an empty likelyCauses list."
+    )
 
-def generate_explanation(inverter_id: str, risk_score: float, features: List[Any], csv_context: str | None = None, parameters: str | None = None) -> str:
-    """
-    Generate an explanation narrative for the model prediction using SHAP values context.
-    """
-    feature_details = []
-    for f in features:
-        feat_name = getattr(f, 'feature', str(f))
-        shap_val = getattr(f, 'shap_value', 'Unknown')
-        feature_details.append(f"{feat_name} (SHAP impact: {shap_val})")
-        
-    feature_str = ", ".join(feature_details) if feature_details else "overall performance indicators"
-    risk_level = "HIGH" if risk_score > 0.7 else ("MEDIUM" if risk_score > 0.4 else "LOW")
 
+def generate_report(inv: InverterContext, parameters: str | None = None) -> tuple[str, dict]:
+    """(source, report): Gemini's report if available and well-formed, else the rule-based one."""
     if is_llm_available():
         try:
-            client = get_gemini_client()
-            if client:
-                prompt = (
-                    f"System Role:\n"
-                    f"You are an analytical, data-driven assistant. Your primary function is to summarize model predictions strictly based on the provided explicit data.\n\n"
-                    f"Context:\n"
-                    f"Inverter {inverter_id} flagged with {risk_level} risk. (Model Score: {risk_score:.2f}).\n"
-                    f"The primary anomalies pushing the risk score up are SHAP factors: {feature_str}\n\n"
-                    f"User Parameters:\n"
-                    f"{parameters if parameters else 'No user parameters provided.'}\n\n"
-                    f"Task:\n"
-                    f"Return ONLY valid, minified JSON matching this exact structure (no markdown blocks, no code fences). Do not append text before or after the JSON.\n\n"
-                    "{\n"
-                    "  \"riskLevel\": \"CRITICAL|HIGH|MEDIUM|LOW\",\n"
-                    "  \"summary\": \"2-3 sentence executive summary explaining the situation based on the SHAP data\",\n"
-                    "  \"topCauses\": [\n"
-                    "    {\n"
-                    "      \"rank\": 1,\n"
-                    "      \"name\": \"Name of the causal feature (e.g. High Thermal Stress)\",\n"
-                    "      \"importance\": 85, // Integer 0-100 indicating contribution\n"
-                    "      \"category\": \"thermal|electrical|mechanical|software\",\n"
-                    "      \"description\": \"Detailed explanation of why this feature is out of bounds and causing issues\",\n"
-                    "      \"dataEvidence\": \"Quote feature SHAP values from the Context\",\n"
-                    "      \"action\": \"Actionable recommendation for the plant engineer\"\n"
-                    "    }\n"
-                    "  ],\n"
-                    "  \"criticalEvents\": [\n"
-                    "    { \"description\": \"Significant single event\", \"severity\": \"CRITICAL|HIGH\" }\n"
-                    "  ],\n"
-                    "  \"healthScore\": 42 // Integer 0-100 representing overall health (inverse of risk)\n"
-                    "}"
-                )
-                response = client.generate_content(prompt)
-                if response.text:
-                    return response.text
+            report = generate_json(_prompt(inv, parameters))
+            if report and isinstance(report.get("likelyCauses"), list) and report.get("summary"):
+                return "gemini", report
+            logging.warning("Gemini report missing required keys; using rules")
         except Exception as e:
-            logging.error(f"Error generating explanation with LLM: {e}")
-            return _generate_fallback_json(inverter_id, risk_level, risk_score, features, f"Failed to generate dynamic narrative. AI connection error: {str(e)}")
-        
-    # Hardcoded fallback
-    return _generate_fallback_json(inverter_id, risk_level, risk_score, features, f"Inverter {inverter_id} shows a {risk_level} risk of failure (score: {risk_score:.2f}) within the next 7-10 days. The primary drivers are: {feature_str}.")
+            logging.error(f"Gemini report failed: {e}")
+    return "rules", rule_based_report(inv)

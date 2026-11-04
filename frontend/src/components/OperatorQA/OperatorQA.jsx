@@ -4,7 +4,7 @@ import styles from './OperatorQA.module.css';
 
 /**
  * Operator Q&A — Chat interface for natural language queries
- * against prediction data (RAG-powered POST /query)
+ * about the latest detection results (POST /query)
  */
 export function OperatorQA({ onQuery, responses = [] }) {
   const [question, setQuestion] = useState('');
@@ -26,13 +26,13 @@ export function OperatorQA({ onQuery, responses = [] }) {
     <div className={styles.container}>
       <h2 className={styles.title}>Operator Q&A</h2>
       <p className={styles.subtitle}>
-        Ask natural language questions about inverter risk and predictions
+        Ask about underperforming inverters and what to check on site
       </p>
 
       <div className={styles.chatArea}>
         {responses.length === 0 && !isLoading && (
           <div className={styles.placeholder}>
-            e.g. &quot;Which inverters in Block B have elevated risk this week?&quot;
+            e.g. &quot;Which inverters are in alarm, and what should the technician check first?&quot;
           </div>
         )}
         {responses.map((item, i) => (

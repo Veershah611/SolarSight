@@ -1,0 +1,48 @@
+{
+  "k": 0.03,
+  "h": 0.8,
+  "min_expected_pu": 0.1,
+  "min_peers": 2,
+  "features": [
+    "peer_median_pu",
+    "peer_q25_pu",
+    "peer_q75_pu",
+    "peer_median_temp",
+    "hour",
+    "doy_sin",
+    "doy_cos",
+    "ref_ratio"
+  ],
+  "trained_until": "2025-06-01 12:00:00",
+  "benchmark": {
+    "expected_power": {
+      "rows": 35249,
+      "mae_pu": 0.0132,
+      "median_abs_pct_error": 0.0113,
+      "r2": 0.9888
+    },
+    "injected_faults": {
+      "10%": {
+        "detection_rate": 0.983,
+        "median_hours_to_detect": 12.0
+      },
+      "20%": {
+        "detection_rate": 1.0,
+        "median_hours_to_detect": 5.0
+      },
+      "30%": {
+        "detection_rate": 1.0,
+        "median_hours_to_detect": 3.0
+      },
+      "50%": {
+        "detection_rate": 1.0,
+        "median_hours_to_detect": 2.0
+      },
+      "100%": {
+        "detection_rate": 1.0,
+        "median_hours_to_detect": 1.0
+      }
+    },
+    "false_alarm_days_per_inverter_month": 1.124
+  }
+}

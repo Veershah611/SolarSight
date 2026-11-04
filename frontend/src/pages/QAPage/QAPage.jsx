@@ -1,7 +1,5 @@
-import { useState, useEffect } from 'react';
 import { OperatorQA } from '../../components/OperatorQA/OperatorQA';
-import { api } from '../../services/api';
-import { MessageSquare, Sparkles } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import styles from './QAPage.module.css';
 
 export function QAPage({ onQuery, qaResponses }) {
@@ -25,11 +23,11 @@ export function QAPage({ onQuery, qaResponses }) {
         <h3 className={styles.suggestionsTitle}>Suggested Questions:</h3>
         <div className={styles.suggestionChips}>
           {/* Static General Questions */}
-          <button className={styles.chip} onClick={() => onQuery("Which inverters are at high risk?")}>
-            Which inverters are at high risk?
+          <button className={styles.chip} onClick={() => onQuery("Which inverters are in alarm, and how much output are they losing?")}>
+            Which inverters are in alarm?
           </button>
-          <button className={styles.chip} onClick={() => onQuery("What maintenance is recommended for high risk inverters?")}>
-            What maintenance is recommended?
+          <button className={styles.chip} onClick={() => onQuery("What should the technician check first on the inverters in alarm?")}>
+            What should we check on site?
           </button>
 
         </div>
@@ -37,15 +35,3 @@ export function QAPage({ onQuery, qaResponses }) {
     </div>
   );
 }
-
-/*import { OperatorQA } from '../../components/OperatorQA/OperatorQA';
-import styles from './QAPage.module.css';
-
-export function QAPage({ onQuery, qaResponses }) {
-  return (
-    <div className={styles.qaPage}>
-      <h1>Operator Q&A</h1>
-      <OperatorQA onQuery={onQuery} responses={qaResponses} />
-    </div>
-  );
-}*/

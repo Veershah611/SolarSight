@@ -3,111 +3,74 @@ import { api } from '../../services/api';
 import { Beaker, UploadCloud, FileSpreadsheet } from 'lucide-react';
 import styles from './SandboxPage.module.css';
 
-const DEMO_CSV_PATH = '/REAL_hackathon_demo_data.csv';
+// One week of a real 12-inverter logger export (plant 1), ending on a day one inverter lost most of its output
+const DEMO_FILE = { path: '/ICR2-LT1.raws.csv', name: 'ICR2-LT1.raws.csv' };
 
 export function SandboxPage({ onResultsUpdate }) {
-  const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
   const fileInputRef = useRef(null);
 
-  // Auto-load demo CSV on mount
+  // Preload the demo export so the analyzer works in one click
   useEffect(() => {
-    async function loadDemoCSV() {
+    async function loadDemo() {
       try {
-        const response = await fetch(DEMO_CSV_PATH);
+        const response = await fetch(DEMO_FILE.path);
         if (!response.ok) return;
         const blob = await response.blob();
-        const demoFile = new File([blob], 'REAL_hackathon_demo_data.csv', {
-          type: 'text/csv',
-        });
-        setFile(demoFile);
+        setFiles((current) => current.length ? current : [new File([blob], DEMO_FILE.name, { type: 'text/csv' })]);
       } catch {
         // Silently ignore – user can still upload manually
       }
     }
-    loadDemoCSV();
+    loadDemo();
   }, []);
 
-  const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      setResults(null);
-      setError(null);
+  const selectFiles = (list) => {
+    const csvs = Array.from(list).filter((f) => f.name.toLowerCase().endsWith('.csv'));
+    if (csvs.length === 0) {
+      setError('Please choose one or more .csv data-logger exports.');
+      return;
     }
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
+    setFiles(csvs);
+    setError(null);
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const droppedFile = e.dataTransfer.files[0];
-      if (droppedFile.name.endsWith('.csv')) {
-        setFile(droppedFile);
-        setResults(null);
-        setError(null);
-      } else {
-        setError('Please drop a valid .csv file.');
-      }
-    }
+    if (e.dataTransfer.files?.length) selectFiles(e.dataTransfer.files);
   };
 
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handlePredictCSV = async () => {
-    if (!file) {
+  const handleDetect = async () => {
+    if (files.length === 0) {
       setError('Please select a CSV file first.');
       return;
     }
-
     setLoading(true);
     setError(null);
-    setResults(null);
-
     try {
-      const data = await api.predictCSV(file);
-      if (data && data.results) {
-        setResults(data.results);
-
-        // Read file contents as text to pass as context
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const csvText = e.target.result;
-          if (onResultsUpdate) {
-            onResultsUpdate(data.results, csvText);
-          }
-        };
-        reader.onerror = () => {
-          if (onResultsUpdate) {
-            onResultsUpdate(data.results, null); // Fallback if read fails
-          }
-        };
-        reader.readAsText(file);
-      } else {
-        setError('Unexpected API response format.');
-      }
+      const data = await api.detect(files);
+      onResultsUpdate?.(data);
     } catch (err) {
-      setError(err.message || 'CSV Prediction failed. Ensure backend has python-multipart installed.');
+      setError(err.message || 'Detection failed.');
     } finally {
       setLoading(false);
     }
   };
+
+  const totalKb = files.reduce((sum, f) => sum + f.size, 0) / 1024;
 
   return (
     <div className={styles.sandboxPage}>
       <header className={styles.header}>
         <div className={styles.headerTitleWrapper}>
           <Beaker className={styles.headerIcon} size={28} />
-          <h1 className={styles.title}>Risk Analyzer (Batch CSV)</h1>
+          <h1 className={styles.title}>Underperformance Analyzer</h1>
         </div>
-        <p className={styles.subtitle}>
-          Upload a CSV containing your inverter telemetry data.
+        <p className={styles.description}>
+          Upload raw data-logger exports from one plant (several days, ideally a week or more).
+          Each inverter is compared hour by hour with what its peers say it should be producing.
         </p>
       </header>
 
@@ -115,71 +78,42 @@ export function SandboxPage({ onResultsUpdate }) {
         <div className={styles.card}>
           <div
             className={styles.dropZone}
-            onDragOver={handleDragOver}
+            onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
-            onClick={handleUploadClick}
+            onClick={() => fileInputRef.current?.click()}
           >
             <input
               type="file"
               accept=".csv"
+              multiple
               ref={fileInputRef}
-              onChange={handleFileChange}
+              onChange={(e) => e.target.files?.length && selectFiles(e.target.files)}
               style={{ display: 'none' }}
             />
-            {file ? (
+            {files.length ? (
               <div className={styles.fileSelected}>
                 <FileSpreadsheet className={styles.fileIcon} size={32} />
-                <span className={styles.fileName}>{file.name}</span>
-                <p className={styles.fileSize}>{(file.size / 1024).toFixed(2)} KB</p>
+                {files.map((f) => <span key={f.name} className={styles.fileName}>{f.name}</span>)}
+                <p className={styles.fileSize}>{totalKb.toFixed(0)} KB · click to choose different files</p>
               </div>
             ) : (
               <div className={styles.dropPrompt}>
                 <UploadCloud className={styles.uploadIcon} size={48} />
-                <p>Click or drag and drop a CSV file here</p>
+                <p>Click or drag and drop logger exports (.csv) here</p>
               </div>
             )}
           </div>
 
           <button
             className={styles.predictBtn}
-            onClick={handlePredictCSV}
-            disabled={loading || !file}
+            onClick={handleDetect}
+            disabled={loading || files.length === 0}
           >
-            {loading ? 'Running Batch Inference...' : 'Upload & Predict CSV'}
+            {loading ? 'Comparing inverters with their peers…' : 'Run Detection'}
           </button>
 
           {error && <div className={styles.error}>{error}</div>}
         </div>
-
-        {results && results.length > 0 && (
-          <div className={styles.resultsCard}>
-            <h2 className={styles.resultTitle}>Batch Prediction Results ({results.length} rows)</h2>
-            <div className={styles.tableWrapper}>
-              <table className={styles.resultsTable}>
-                <thead>
-                  <tr>
-                    <th>Inverter ID</th>
-                    <th>Risk Score</th>
-                    <th>Risk Label</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {results.map((row, idx) => (
-                    <tr key={idx}>
-                      <td className={styles.fwBold}>{row.inverter_id}</td>
-                      <td>{row.risk_score.toFixed(4)}</td>
-                      <td>
-                        <span className={`${styles.riskBadge} ${styles[row.risk_label.toLowerCase()]}`}>
-                          {row.risk_label}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

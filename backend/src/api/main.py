@@ -3,26 +3,32 @@ from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from src.api.routes import router
-from src.ml.model_loader import get_model
+from src.ml.serving import load_detector
 import logging
+import os
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logging.info("Loading ML Model...")
-    app.state.model = get_model()
+    logging.info("Loading underperformance detector...")
+    app.state.detector = load_detector()
+    if app.state.detector is None:
+        logging.warning("No detector in backend/models; /detect will return 503.")
     yield
-    # Clean up on shutdown
-    app.state.model = None
+    app.state.detector = None
 
-app = FastAPI(title="SolarSight API", description="AI-Driven Solar Inverter Failure Prediction API", lifespan=lifespan)
+app = FastAPI(title="SolarSight API", description="Same-day detection of underperforming solar inverters", lifespan=lifespan)
 
-# CORS — Updated to allow your specific Vercel frontend and local development
+# CORS — comma-separated CORS_ORIGINS overrides the defaults (local Vite/Docker + Vercel)
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost:3000",  # Vite dev server and Docker frontend
+    "http://localhost:5173",  # Vite default port
+    "https://latent-space-hackamined.vercel.app",
+]
+cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()] or DEFAULT_CORS_ORIGINS
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173", # For local Vite development
-        "https://latent-space-hackamined.vercel.app" # Your production Vercel URL
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
