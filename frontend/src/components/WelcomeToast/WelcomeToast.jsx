@@ -31,7 +31,7 @@ export const WelcomeToast = ({ show, onClose }) => {
                         <div className={styles.content}>
                             <h4 className={styles.title}>Welcome to SolarSight!</h4>
                             <p className={styles.message}>
-                                To begin your analysis, please upload an inverter telemetry CSV in the <strong>Sandbox</strong> tab.
+                                Open the <strong>Analyzer</strong> tab and run the bundled demo export (or upload your own) to see which inverters are underperforming.
                             </p>
                         </div>
                         <button className={styles.closeBtn} onClick={onClose} aria-label="Close message">

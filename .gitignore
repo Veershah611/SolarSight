@@ -66,3 +66,6 @@ venv.bak/
 # Docker
 .docker/
 docker-compose.override.yml
+
+# Local datasets and caches
+backend/data/

@@ -1,0 +1,225 @@
+{
+  "summary": {
+    "plants": [
+      "plant_1",
+      "plant_2"
+    ],
+    "inverters": 30,
+    "inverter_hours": 476983,
+    "period": [
+      "2024-03-01 04:00:00",
+      "2026-03-02 11:00:00"
+    ],
+    "legacy_failure_hours": 13875,
+    "legacy_failure_hours_at_dawn_dusk": 12163,
+    "legacy_target_rate": 0.0619,
+    "outage_hours": 117,
+    "outage_episodes": 10,
+    "target_rate": 0.0043,
+    "label_config": {
+      "core_start_hour": 8,
+      "core_end_hour": 16,
+      "zero_power": 0.1,
+      "peer_producing_pu": 0.05,
+      "peer_producing_frac": 0.5,
+      "min_hours": 3,
+      "merge_gap_hours": 24,
+      "lead_min_days": 1.0,
+      "lead_max_days": 10.0
+    },
+    "top_features_full": [
+      [
+        "roll_v_ab_mean_7d",
+        0.4374
+      ],
+      [
+        "roll_v_bc_mean_7d",
+        0.1348
+      ],
+      [
+        "roll_v_ca_std_7d",
+        0.1227
+      ],
+      [
+        "roll_power_mean_7d",
+        0.0568
+      ],
+      [
+        "str_mean_rmean_7d",
+        0.0362
+      ],
+      [
+        "anom_night_hightemp_7d",
+        0.0234
+      ],
+      [
+        "roll_v_ca_mean_3d",
+        0.0189
+      ],
+      [
+        "outage_hours_30d",
+        0.0176
+      ],
+      [
+        "peer_temp_dev",
+        0.0168
+      ],
+      [
+        "str_worst_ratio_rmean_7d",
+        0.0154
+      ]
+    ]
+  },
+  "results": {
+    "A_legacy_random_split": {
+      "name": "A legacy label, random split",
+      "features": 22,
+      "best_iteration": 499,
+      "rows": 71548,
+      "positives": 4433,
+      "prevalence": 0.062,
+      "pr_auc": 0.9316,
+      "roc_auc": 0.9943,
+      "threshold": 0.7428,
+      "precision": 0.8215,
+      "recall": 0.8989
+    },
+    "B_legacy_time_split": {
+      "name": "B legacy label, time split",
+      "features": 22,
+      "best_iteration": 6,
+      "rows": 95424,
+      "positives": 0,
+      "prevalence": 0.0,
+      "pr_auc": null,
+      "roc_auc": null,
+      "threshold": 0.35,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "C_original_leakfree": {
+      "name": "C original features minus leaky, time split",
+      "features": 18,
+      "best_iteration": 20,
+      "rows": 93905,
+      "positives": 1076,
+      "prevalence": 0.0115,
+      "pr_auc": 0.0128,
+      "roc_auc": 0.5034,
+      "threshold": 0.1727,
+      "precision": 0.0128,
+      "recall": 1.0,
+      "events": {
+        "episodes": 5,
+        "episodes_caught": 5,
+        "event_recall": 1.0,
+        "median_lead_days": 10.0,
+        "false_alarm_days_per_inverter_month": 26.683
+      }
+    },
+    "D_full": {
+      "name": "D all features + outage history, time split",
+      "features": 75,
+      "best_iteration": 31,
+      "rows": 93905,
+      "positives": 1076,
+      "prevalence": 0.0115,
+      "pr_auc": 0.0134,
+      "roc_auc": 0.5339,
+      "threshold": 0.0994,
+      "precision": 0.0134,
+      "recall": 1.0,
+      "events": {
+        "episodes": 5,
+        "episodes_caught": 5,
+        "event_recall": 1.0,
+        "median_lead_days": 10.0,
+        "false_alarm_days_per_inverter_month": 25.625
+      }
+    },
+    "S_min_outage_hours_1": {
+      "name": "D full features, outages >= 1h (42 episodes)",
+      "features": 75,
+      "best_iteration": 20,
+      "rows": 93811,
+      "positives": 2874,
+      "prevalence": 0.0306,
+      "pr_auc": 0.0354,
+      "roc_auc": 0.4392,
+      "threshold": 0.1727,
+      "precision": 0.026,
+      "recall": 0.4374,
+      "events": {
+        "episodes": 13,
+        "episodes_caught": 10,
+        "event_recall": 0.7692,
+        "median_lead_days": 8.33,
+        "false_alarm_days_per_inverter_month": 16.361
+      }
+    },
+    "S_min_outage_hours_2": {
+      "name": "D full features, outages >= 2h (27 episodes)",
+      "features": 75,
+      "best_iteration": 0,
+      "rows": 93832,
+      "positives": 1368,
+      "prevalence": 0.0146,
+      "pr_auc": 0.0171,
+      "roc_auc": 0.5234,
+      "threshold": 0.5225,
+      "precision": 0.0192,
+      "recall": 0.4057,
+      "events": {
+        "episodes": 6,
+        "episodes_caught": 6,
+        "event_recall": 1.0,
+        "median_lead_days": 7.44,
+        "false_alarm_days_per_inverter_month": 10.809
+      }
+    },
+    "baseline_recent_outages": {
+      "name": "baseline: outage_hours_30d",
+      "rows": 93905,
+      "positives": 1076,
+      "prevalence": 0.0115,
+      "pr_auc": 0.0115,
+      "roc_auc": 0.4456,
+      "threshold": 0.0,
+      "precision": 0.0115,
+      "recall": 1.0,
+      "events": {
+        "episodes": 5,
+        "episodes_caught": 5,
+        "event_recall": 1.0,
+        "median_lead_days": 10.0,
+        "false_alarm_days_per_inverter_month": 29.622
+      }
+    },
+    "E_test_on_plant_1": {
+      "name": "E full features, test on plant_1",
+      "features": 75,
+      "best_iteration": 0,
+      "rows": 359908,
+      "positives": 1664,
+      "prevalence": 0.0046,
+      "pr_auc": 0.0046,
+      "roc_auc": 0.4928,
+      "threshold": 0.475,
+      "precision": 0.0046,
+      "recall": 1.0
+    },
+    "E_test_on_plant_2": {
+      "name": "E full features, test on plant_2",
+      "features": 75,
+      "best_iteration": 0,
+      "rows": 109594,
+      "positives": 367,
+      "prevalence": 0.0033,
+      "pr_auc": 0.0071,
+      "roc_auc": 0.7351,
+      "threshold": 0.475,
+      "precision": 0.0033,
+      "recall": 1.0
+    }
+  }
+}

@@ -1,0 +1,217 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 18px;
+  min-width: 0;
+}
+
+.cardTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent-primary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.kpiValue {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-heading);
+  text-align: center;
+}
+
+.kpiLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: center;
+  margin-top: 4px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.caption {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-top: 8px;
+}
+
+.evidence {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.evidenceItem {
+  background: var(--bg-header);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.evidenceLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.evidenceValue {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-heading);
+  margin-top: 4px;
+}
+
+.evidenceTypical {
+  font-size: 11px;
+  color: #666;
+}
+
+.diagnosePrompt {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.diagnoseButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  padding: 10px 22px;
+  cursor: pointer;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.diagnoseButton:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.error {
+  color: var(--status-high);
+  font-size: 13px;
+}
+
+.report {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reportHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.reportHeadline {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-heading);
+}
+
+.reportSummary {
+  font-size: 13px;
+  color: #bbb;
+  line-height: 1.6;
+  margin-top: 4px;
+}
+
+.sourceBadge {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 3px;
+  background: rgba(76, 201, 240, 0.12);
+  color: var(--accent-primary);
+  white-space: nowrap;
+}
+
+.cause {
+  border-left: 3px solid var(--accent-primary);
+  background: var(--bg-header);
+  border-radius: 4px;
+  padding: 10px 14px;
+}
+
+.causeTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.causeName {
+  font-weight: 600;
+  color: var(--text-heading);
+  font-size: 14px;
+}
+
+.causeConfidence {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.causeEvidence {
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
+}
+
+.causeAction {
+  font-size: 12px;
+  color: var(--accent-primary);
+  margin-top: 6px;
+}
+
+.checks {
+  font-size: 13px;
+  color: #bbb;
+  line-height: 1.7;
+  padding-left: 20px;
+}
+
+@media (max-width: 900px) {
+  .kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

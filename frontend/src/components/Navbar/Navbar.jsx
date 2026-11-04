@@ -11,7 +11,7 @@ import styles from './Navbar.module.css';
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'qa', label: 'Operator Q&A', icon: MessageSquare },
-  { id: 'sandbox', label: 'Risk Analyzer', icon: Beaker },
+  { id: 'sandbox', label: 'Analyzer', icon: Beaker },
 
 ];
 

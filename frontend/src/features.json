@@ -1,9 +1,0 @@
-{
-  "features": [
-    "inv_kwh_total", "roll_temp_mean_7d", "roll_kwh_today_std_7d", "roll_temp_std_7d", 
-    "roll_temp_std_3d", "roll_temp_mean_3d", "roll_pv1_power_std_7d", "anom_night_power_7d", 
-    "roll_kwh_today_mean_7d", "roll_kwh_today_std_3d", "str_worst_ratio_rmean_7d", "day_of_week", 
-    "inv_power", "str_mean_rmean_7d", "roll_kwh_today_mean_3d", "stress_hightemp_7d", 
-    "is_daytime", "anom_night_hightemp_7d", "roll_power_std_3d", "roll_pv1_power_mean_3d"
-  ]
-}

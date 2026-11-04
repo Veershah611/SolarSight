@@ -1,52 +1,88 @@
+from typing import Any, List, Literal
+
 from pydantic import BaseModel
-from typing import List
 
-class AlarmHistory(BaseModel):
+Status = Literal["ALARM", "WATCH", "OK"]
+
+
+class Evidence(BaseModel):
+    signal: str
+    value: float | None
+    typical: float | None = None
+    description: str = ""
+
+
+class DailyPoint(BaseModel):
+    day: str
+    energy_ratio: float | None
+    alarm: bool
+
+
+class HourPoint(BaseModel):
     timestamp: str
-    code: str
+    actual_pu: float | None
+    expected_pu: float | None
+    cusum: float | None
+    alarm: bool
 
-class TelemetryData(BaseModel):
-    features: dict[str, float]
 
-class PredictRequest(BaseModel):
+class InverterDetection(BaseModel):
     inverter_id: str
-    telemetry: TelemetryData
-    alarm_history: List[AlarmHistory] = []
+    status: Status
+    risk_label: Literal["HIGH", "MEDIUM", "LOW"]
+    risk_score: float  # energy shortfall vs expected on the latest day, %
+    energy_ratio_latest_day: float | None
+    energy_ratio_window: float | None
+    alarm_hours: int
+    first_alarm: str | None
+    last_alarm: str | None
+    judged_hours: int
+    evidence: List[Evidence]
+    daily: List[DailyPoint]
+    hourly: List[HourPoint]
 
-class FeatureExplanation(BaseModel):
-    feature: str
-    shap_value: float
 
-class PredictResponse(BaseModel):
+class DetectionSummary(BaseModel):
+    inverters: int
+    period_start: str
+    period_end: str
+    latest_day: str
+    judged_hours: int
+    inverters_in_alarm: int
+    inverters_on_watch: int
+    detector: dict[str, Any]
+
+
+class DetectResponse(BaseModel):
+    summary: DetectionSummary
+    results: List[InverterDetection]
+
+
+class InverterContext(BaseModel):
+    """The parts of an InverterDetection the GenAI endpoints need (no chart series)."""
     inverter_id: str
+    status: Status
     risk_score: float
-    risk_label: str
-    prediction_window: str = "7-10 days"
-    top_features: List[FeatureExplanation]
+    energy_ratio_latest_day: float | None = None
+    energy_ratio_window: float | None = None
+    alarm_hours: int = 0
+    first_alarm: str | None = None
+    evidence: List[Evidence] = []
 
-class BatchPredictResponse(BaseModel):
-    results: List[PredictResponse]
+
+class ExplainRequest(BaseModel):
+    inverter: InverterContext
+    parameters: str | None = None
+
 
 class ExplainResponse(BaseModel):
     inverter_id: str
-    narrative: str
+    source: Literal["gemini", "rules"]
+    report: dict[str, Any]
+
 
 class QueryRequest(BaseModel):
     question: str
-    csv_context: str | None = None
-    parameters: str | None = None
-    inverter_id: str | None = None
-    risk_score: float | None = None
-    top_features: List[FeatureExplanation] | None = None
-
-class ExplainRequest(BaseModel):
-    inverter_id: str
-    risk_score: float | None = None
-    risk_label: str | None = None
-    top_features: List[FeatureExplanation] | None = None
-    csv_context: str | None = None
-    parameters: str | None = None
-
-class PredefinedQuestionsRequest(BaseModel):
-    csv_context: str | None = None
+    inverter: InverterContext | None = None
+    fleet: List[InverterContext] = []
     parameters: str | None = None
