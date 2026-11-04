@@ -23,8 +23,10 @@ DEFAULT_CORS_ORIGINS = [
     "http://localhost:3000",  # Vite dev server and Docker frontend
     "http://localhost:5173",  # Vite default port
     "https://latent-space-hackamined.vercel.app",
+    "https://solar-sight-six.vercel.app",
 ]
-cors_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()] or DEFAULT_CORS_ORIGINS
+# Browsers send origins without a trailing slash, so strip one if it was pasted into the env var
+cors_origins = [o.strip().rstrip("/") for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()] or DEFAULT_CORS_ORIGINS
 
 app.add_middleware(
     CORSMiddleware,

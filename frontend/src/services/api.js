@@ -3,7 +3,8 @@
  * Endpoints: /health, /detect, /explain, /query
  */
 
-const API_BASE = import.meta.env.VITE_API_URL || '/api';
+// Endpoints start with "/", so drop any trailing slash from the configured URL (avoids "//detect" 404s)
+const API_BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 
 async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
@@ -74,6 +75,9 @@ export const api = {
       body: formData,
     });
 
+    if (response.status === 404) {
+      throw new Error('The backend has no /detect endpoint. It is running an older version of the API; redeploy it from main.');
+    }
     if (!response.ok) {
       let errorText = await response.text();
       try {

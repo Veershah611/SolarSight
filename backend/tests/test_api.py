@@ -96,3 +96,10 @@ def test_rejects_too_few_inverters(client):
 def test_rejects_non_logger_csv(client):
     res = client.post("/detect", files=[("files", ("x.csv", io.BytesIO(b"timestamp,a\n1,2\n"), "text/csv"))])
     assert res.status_code == 400
+
+
+@pytest.mark.parametrize("origin", ["https://solar-sight-six.vercel.app", "http://localhost:3000"])
+def test_cors_preflight_allows_deployed_frontend(client, origin):
+    res = client.options("/detect", headers={"Origin": origin, "Access-Control-Request-Method": "POST"})
+    assert res.status_code == 200
+    assert res.headers["access-control-allow-origin"] == origin

@@ -8,24 +8,33 @@ const DEMO_FILE = { path: '/ICR2-LT1.raws.csv', name: 'ICR2-LT1.raws.csv' };
 
 export function SandboxPage({ onResultsUpdate }) {
   const [files, setFiles] = useState([]);
+  const [demoStatus, setDemoStatus] = useState('loading'); // loading | ready | failed
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const fileInputRef = useRef(null);
 
   // Preload the demo export so the analyzer works in one click
   useEffect(() => {
+    let cancelled = false;
     async function loadDemo() {
       try {
         const response = await fetch(DEMO_FILE.path);
-        if (!response.ok) return;
-        const blob = await response.blob();
-        setFiles((current) => current.length ? current : [new File([blob], DEMO_FILE.name, { type: 'text/csv' })]);
-      } catch {
-        // Silently ignore – user can still upload manually
+        const text = response.ok ? await response.text() : '';
+        // SPA hosts answer a missing file with index.html and a 200, so check it is the logger CSV
+        if (!text.startsWith('timestamp,')) throw new Error(`unexpected content at ${DEMO_FILE.path}`);
+        if (cancelled) return;
+        setFiles((current) => current.length ? current : [new File([text], DEMO_FILE.name, { type: 'text/csv' })]);
+        setDemoStatus('ready');
+      } catch (e) {
+        console.warn('Demo export not loaded:', e);
+        if (!cancelled) setDemoStatus('failed');
       }
     }
     loadDemo();
+    return () => { cancelled = true; };
   }, []);
+
+  const isDemo = files.length === 1 && files[0].name === DEMO_FILE.name;
 
   const selectFiles = (list) => {
     const csvs = Array.from(list).filter((f) => f.name.toLowerCase().endsWith('.csv'));
@@ -94,12 +103,22 @@ export function SandboxPage({ onResultsUpdate }) {
               <div className={styles.fileSelected}>
                 <FileSpreadsheet className={styles.fileIcon} size={32} />
                 {files.map((f) => <span key={f.name} className={styles.fileName}>{f.name}</span>)}
-                <p className={styles.fileSize}>{totalKb.toFixed(0)} KB · click to choose different files</p>
+                <p className={styles.fileSize}>
+                  {isDemo && 'Bundled demo: 10 days, 12 inverters · '}
+                  {totalKb.toFixed(0)} KB · click to choose different files
+                </p>
               </div>
             ) : (
               <div className={styles.dropPrompt}>
                 <UploadCloud className={styles.uploadIcon} size={48} />
-                <p>Click or drag and drop logger exports (.csv) here</p>
+                <p>
+                  {demoStatus === 'loading'
+                    ? 'Loading the demo export…'
+                    : 'Click or drag and drop logger exports (.csv) here'}
+                </p>
+                {demoStatus === 'failed' && (
+                  <p className={styles.fileSize}>The bundled demo export couldn't be loaded; upload your own.</p>
+                )}
               </div>
             )}
           </div>
